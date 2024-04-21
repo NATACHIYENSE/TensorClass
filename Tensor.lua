@@ -1,12 +1,12 @@
+--!native
+--!strict
+
 --[[
 	Tensor class implementation (a 3-dimensional table)
 	by @Prototrode (Roblox and Discord handle)
 	
 	NOTE: Not extensively tested, might be unstable. Only used for one or two of my projects.
 ]]
-
---!native
---!strict
 
 export type ArrayValue<T> = {[number]: T?}
 export type MatrixValue<T> = {[number]: ArrayValue<T>}
