@@ -1,89 +1,128 @@
-type class = {
-	new: <X, Y, Z, T>(TensorValue<X, Y, Z, T>?) -> Tensor<X, Y, Z, T>,
-}
-
-export type Array<Z, T> = {[Z]: T}
-export type Matrix<X, Y, T> = {[X]: Array<Y, T>}
-export type TensorValue<X, Y, Z, T> = {[X]: Matrix<Y, Z, T>}
-export type Tensor<X, Y, Z, T> = {
-	_ : TensorValue<X, Y, Z, T>, --The actual stored values of the Tensor
+--[[
+	Tensor class implementation (a 3-dimensional table)
+	by @Prototrode (Roblox and Discord handle)
 	
-	--Class methods are explained below
-	Set: (self: Tensor<X, Y, Z, T>, x: X, y: Y, z: Z, value: T) -> (),
-	Get: (self: Tensor<X, Y, Z, T>, x: X, y: Y, z: Z) -> T?,
-	Iter: ((self: Tensor<X, Y, Z, T>) -> () -> (X, Y, Z, T)) & ((self: Tensor<X, Y, Z, T>, true) -> () -> (X, Y, Z, T, number)),
-	Clone: (self: Tensor<X, Y, Z, T>) -> Tensor<X, Y, Z, T>,
+	NOTE: Not extensively tested, might be unstable. Only used for one or two of my projects.
+]]
+
+--!native
+--!strict
+
+export type ArrayValue<T> = {[number]: T?}
+export type MatrixValue<T> = {[number]: ArrayValue<T>}
+export type TensorValue<T> = {[number]: MatrixValue<T>}
+export type TensorHash<T> = {[Vector3]: T}
+
+type class = {
+	__index: class,
+	new: <T>() -> Tensor<T>,
+	fromHash: <T>(hash: TensorHash<T>) -> Tensor<T>, --opposite of Tensor:Hash()
 }
 
-local Tensor = {}
+type ProtoTensor<T> = {
+	self: TensorValue<T>
+}
+
+export type Tensor<T> = ProtoTensor<T> & {
+	
+	--add a new entry; set to nil to remove
+	Set: (self: Tensor<T>, x: number, y: number, z: number, v: T?) -> (),
+	
+	--retrieve an entry; nil if it doesn't exist
+	Get: (self: Tensor<T>, x: number, y: number, z: number) -> T?,
+	
+	--returns a coroutine iterator in (x, y, z, value) format
+	Iter: (self: Tensor<T>) -> () -> (number, number, number, T),
+	
+	--clones the tensor and returns the new one
+	Clone: (self: Tensor<T>) -> Tensor<T>,
+	
+	--create a hashmap equivalent of the tensor in {[Vector3]: value} format
+	Hash: (self: Tensor<T>) -> TensorHash<T>,
+	
+	--get the total number of items stored in the tensor
+	Len: (self: Tensor<T>) -> number,
+}
+
+local Tensor: class & Tensor<any> = {}::any
 Tensor.__index = Tensor
 
---Create a new Tensor object. Optional pre-existing tensor data structure (A 3D table organized as table[x][y][z] = v).
-function Tensor.new<X, Y, Z, T>(tensor: TensorValue<X, Y, Z, T>?): Tensor<X, Y, Z, T>
-	return setmetatable({_ = tensor or {}}, Tensor)::any
+Tensor.new = function<T>(): Tensor<T>
+	local self: ProtoTensor<T> = {
+		self = {},
+	}
+	local self: Tensor<T> = setmetatable(self, Tensor)::any
+	
+	return self
 end
 
---Set a value in the Tensor.
-function Tensor.Set<X, Y, Z, T>(self: Tensor<X, Y, Z, T>, x: X, y: Y, z: Z, value: T): ()
-	local m: Matrix<Y, Z, T>? = self._[x]
-	if m then
-		local a: Array<Z, T>? = m[y]
-		if a then
-			a[z] = value
+Tensor.fromHash = function<T>(hash: TensorHash<T>): Tensor<T>
+	local self: Tensor<T> = Tensor.new()
+	for vec, val in hash do
+		self:Set(vec.X, vec.Y, vec.Z, val)
+	end
+	return self
+end
+
+Tensor.Set = function<T>(self: Tensor<T>, x: number, y: number, z: number, v: T?)
+	local mat: MatrixValue<T>? = self.self[x]
+	if mat then
+		local arr: ArrayValue<T>? = mat[y]
+		if arr then
+			arr[z] = v
 			return
 		end
-		m[y] = {[z] = value}
+		mat[y] = {[z] = v}
 		return
-	end	
-	self._[x] = {[y] = {[z] = value}}
-	return
+	end
+	self.self[x] = {[y] = {[z] = v}}
 end
 
---Retrieve a value from the Tensor. Returns nil if the value doesn't exist.
-function Tensor.Get<X, Y, Z, T>(self: Tensor<X, Y, Z, T>, x: X, y: Y, z: Z): T?
-	local m: Matrix<Y, Z, T>? = self._[x]
-	if m then
-		local a: Array<Z, T>? = m[y]
-		if a then
-			return a[z]
+Tensor.Get = function<T>(self: Tensor<T>, x: number, y: number, z: number): T?
+	local mat: MatrixValue<T>? = self.self[x]
+	if mat then
+		local arr: ArrayValue<T>? = mat[y]
+		if arr then
+			return arr[z]
 		end
-	end
+	end	
 	return nil
 end
 
---Returns an iterator function that will loop through all entries in the Tensor. Returns the position and the value.
-function Tensor.Iter<X, Y, Z, T>(self: Tensor<X, Y, Z, T>, counter: boolean?): () -> (X, Y, Z, T, number?)
-	if counter then
-		return coroutine.wrap(function()
-			local _c: number = 0
-			for x: X, m: Matrix<Y, Z, T> in self._ do
-				for y: Y, a: Array<Z, T> in m do
-					for z: Z, v: T in a do
-						_c += 1
-						coroutine.yield(x, y, z, v, _c)
-					end
-				end
-			end
-		end)
-	end
+Tensor.Iter = function<T>(self: Tensor<T>): () -> (number, number, number, T)
 	return coroutine.wrap(function()
-		for x: X, m: Matrix<Y, Z, T> in self._ do
-			for y: Y, a: Array<Z, T> in m do
-				for z: Z, v: T in a do
-					coroutine.yield(x, y, z, v)
+		for x, mat in self.self do
+			for y, arr in mat do
+				for z, val in arr do
+					coroutine.yield(x, y, z, val)
 				end
 			end
 		end
 	end)
 end
 
---Clone a Tensor object.
-function Tensor.Clone<X, Y, Z, T>(self: Tensor<X, Y, Z, T>): Tensor<X, Y, Z, T>
-	local t: Tensor<X, Y, Z, T> = Tensor.new()
-	for x, y, z, v: T in self:Iter() do
-		t:Set(x, y, z, v)
+Tensor.Clone = function<T>(self: Tensor<T>): Tensor<T>
+	local new: Tensor<T> = Tensor.new()
+	for x, y, z, v in self:Iter() do
+		new:Set(x, y, z, v)
 	end
-	return t
+	return new
 end
 
-return (Tensor::any)::class
+Tensor.Hash = function<T>(self: Tensor<T>): TensorHash<T>
+	local hash: TensorHash<T> = {}
+	for x, y, z, v in self:Iter() do
+		hash[Vector3.new(x, y, z)] = v
+	end
+	return hash
+end
+
+Tensor.Len = function<T>(self: Tensor<T>): number
+	local amount: number = 0
+	for _ in self:Iter() do
+		amount += 1
+	end
+	return amount
+end
+
+return Tensor::class
